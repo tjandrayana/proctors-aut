@@ -18,6 +18,24 @@ This is an automation that will help to run the proctor Gojek commands in parall
     go run proctor-aut.go
 ```
 
+## CSV Format
+```
+    Service Name,Environment,Team
+    service-01,integration,driver
+```
+
+## Results
+
+```
+    ----- Execution -----
+start on: 2023-03-10 17:27:03.176213 +0700 WIB m=+0.000184917
+end on: 2023-03-10 17:30:16.61314 +0700 WIB m=+193.436891084
+Worker : 10
+Total Task: 50
+duration: 3m13.436706375s
+```
+
+
 ## Important !!!
 
 Don't forget to give stars for this repo. Thank you!!!
