@@ -28,7 +28,7 @@ func main() {
 	RunCommands()
 }
 
-var filename = "tools-pod-services-3"
+var filename = "driver-risk-services-2"
 
 func RunCommands() {
 
@@ -128,12 +128,22 @@ func EvaluateOutput(msg, insName, environment, team string) Instances {
 		tables[sp[0]] = sp[1]
 	}
 
-	for k, v := range tables {
-		fmt.Printf("k:%s -> v:%s\n", k, v)
-	}
-
 	disk1 := tables["disk1 size"]
 	disk2 := tables["disk2 size"]
+
+	if disk1 != "" {
+		arr := strings.Split(disk1, " ")
+		if len(arr) > 2 {
+			disk1 = arr[1]
+		}
+	}
+
+	if disk2 != "" {
+		arr := strings.Split(disk2, " ")
+		if len(arr) > 2 {
+			disk2 = arr[1]
+		}
+	}
 
 	diskName1 := tables["disk1 name"]
 	diskName2 := tables["disk2 name"]
@@ -168,9 +178,9 @@ func CreateCSV(ins []Instances) {
 		"Environment",
 		"MachineType",
 		"DiskName1",
-		"DiskSize1",
+		"DiskSize1 GB",
 		"DiskName2",
-		"DiskSize2",
+		"DiskSize2 GB",
 		"Team",
 	})
 
