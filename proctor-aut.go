@@ -17,7 +17,10 @@ type Instances struct {
 	IP          string `json:"ip"`
 	Environment string `json:"environment"`
 	MachineType string `json:"machine_type"`
-	Disk        string `json:"disk"`
+	DiskName1   string `json:"disk_name_1"`
+	Disk1Size1  string `json:"disk_size_1"`
+	DiskName2   string `json:"disk_name_2"`
+	Disk1Size2  string `json:"disk_size_2"`
 	Team        string `json:"team"`
 }
 
@@ -25,15 +28,17 @@ func main() {
 	RunCommands()
 }
 
+var filename = "tools-pod-services-3"
+
 func RunCommands() {
 
 	var instances []Instances
-	records := readCsvFile("files/input.csv")
+	records := readCsvFile(fmt.Sprintf("files/%s.csv", filename))
 
 	start := time.Now()
 
 	// Start Worker Pool.
-	totalWorker := 10
+	totalWorker := 5
 	wp := workerpool.NewWorkerPool(totalWorker)
 	wp.Run()
 
@@ -41,23 +46,34 @@ func RunCommands() {
 	resultC := make(chan Instances, totalTask)
 
 	for i, d := range records {
+		d := d
+		i := i
+		wp.AddTask(
+			func() {
 
-		wp.AddTask(func() {
+				insName := d[0]
+				env := d[1]
+				team := d[2]
 
-			insName := d[0]
-			env := d[1]
-			team := d[2]
+				fmt.Printf("---- Processing Task : %d--- %s -> %s ----- \n", i, insName, env)
 
-			fmt.Printf("---- Processing Task : %d--- %s -> %s ----- \n", i, insName, env)
+				if i > 0 {
+					if env == "production" || env == "integration" {
+						msg := ExecuteCommand(insName, env)
+						resultC <- EvaluateOutput(msg, insName, env, team)
+					} else {
+						resultC <- Instances{
+							ServiceName: insName,
+							Environment: env,
+							Team:        team,
+						}
+					}
+				} else {
+					resultC <- Instances{}
+				}
 
-			if i > 0 {
-				msg := ExecuteCommand(insName, env)
-				resultC <- EvaluateOutput(msg, insName, env, team)
-			} else {
-				resultC <- Instances{}
-			}
-
-		})
+			},
+		)
 
 	}
 
@@ -73,7 +89,7 @@ func RunCommands() {
 
 	end := time.Now()
 
-	fmt.Printf("----- Execution -----\nstart on: %v\nend on: %v\nWorker : %d\nduration: %v\n------------------------\n", start, end, totalWorker, time.Since(start))
+	fmt.Printf("----- Execution -----\nstart on: %v\nend on: %v\nTask: %d\nWorker : %d\nduration: %v\n------------------------\n", start, end, totalTask, totalWorker, time.Since(start))
 
 }
 
@@ -116,18 +132,21 @@ func EvaluateOutput(msg, insName, environment, team string) Instances {
 		fmt.Printf("k:%s -> v:%s\n", k, v)
 	}
 
-	disk := tables["disk1 size"]
+	disk1 := tables["disk1 size"]
+	disk2 := tables["disk2 size"]
 
-	if tables["disk2 size"] != "" {
-		disk = tables["disk2 size"]
-	}
+	diskName1 := tables["disk1 name"]
+	diskName2 := tables["disk2 name"]
 
 	return Instances{
 		ServiceName: insName,
 		IP:          tables["ip"],
 		Environment: environment,
 		MachineType: tables["machine type"],
-		Disk:        disk,
+		DiskName1:   diskName1,
+		Disk1Size1:  disk1,
+		DiskName2:   diskName2,
+		Disk1Size2:  disk2,
 		Team:        team,
 	}
 
@@ -137,7 +156,7 @@ func CreateCSV(ins []Instances) {
 
 	var rows [][]string
 
-	file, err := os.Create(fmt.Sprintf("files/detail_instances-%v.csv", time.Now()))
+	file, err := os.Create(fmt.Sprintf("files/%s-output-%v.csv", filename, time.Now()))
 	if err != nil {
 		log.Println("Cannot create CSV file:", err)
 	}
@@ -148,7 +167,10 @@ func CreateCSV(ins []Instances) {
 		"IP",
 		"Environment",
 		"MachineType",
-		"Disk",
+		"DiskName1",
+		"DiskSize1",
+		"DiskName2",
+		"DiskSize2",
 		"Team",
 	})
 
@@ -158,7 +180,10 @@ func CreateCSV(ins []Instances) {
 			record.IP,
 			record.Environment,
 			record.MachineType,
-			record.Disk,
+			record.DiskName1,
+			record.Disk1Size1,
+			record.DiskName2,
+			record.Disk1Size2,
 			record.Team,
 		}
 		rows = append(rows, row)
