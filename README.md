@@ -3,6 +3,11 @@
 
 This is an automation that will help to run the proctor Gojek commands in parallels.
 
+Currently there are 2 commands that provided : 
+1. Describe Instances
+2. Delete VM
+
+
 ## Prerequisite
 
 - Proctor Gojek
@@ -13,7 +18,8 @@ This is an automation that will help to run the proctor Gojek commands in parall
 - Create a directory named it as "files" inside the proctor-aut
 - Put the CSV File named it as "input.csv"
 - Set the worker with you need
-- Run the service with this command 
+- Set the command that you want to executed
+- Run the service with this command
 ```
     go run proctor-aut.go
 ```

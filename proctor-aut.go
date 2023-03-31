@@ -24,21 +24,52 @@ type Instances struct {
 	Team        string `json:"team"`
 }
 
-func main() {
-	RunCommands()
+type DeleteVM struct {
+	ServiceName string `json:"service_name"`
+	Environment string `json:"environment"`
+	Team        string `json:"team"`
+	Notes       string `json:"notes"`
 }
 
-var filename = "driver-risk-services-2"
+const (
+	DescribeInstanceCommand string = "describe-instance"
+	DeleteVMCommand         string = "delete-vm"
+)
 
-func RunCommands() {
+func main() {
 
-	var instances []Instances
+	var filename = "delete-vm-consumer-risk"
+	command := DeleteVMCommand
+
+	RunCommands(command, filename)
+}
+
+func RunCommands(command, filename string) {
 	records := readCsvFile(fmt.Sprintf("files/%s.csv", filename))
+	totalWorker := 5
+	totalTask := len(records)
 
 	start := time.Now()
 
+	switch command {
+	case DescribeInstanceCommand:
+		RunDescribeInstanceCommand(filename, records, totalWorker)
+	case DeleteVMCommand:
+		RunDeleteVMCommand(filename, records, totalWorker)
+	default:
+		fmt.Printf("Unknown Command %s\n", command)
+	}
+
+	end := time.Now()
+
+	fmt.Printf("----- Execution -----\nstart on: %v\nend on: %v\nTask: %d\nWorker : %d\nduration: %v\n------------------------\n", start, end, totalTask, totalWorker, time.Since(start))
+
+}
+
+func RunDescribeInstanceCommand(filename string, records [][]string, totalWorker int) {
+	var instances []Instances
+
 	// Start Worker Pool.
-	totalWorker := 5
 	wp := workerpool.NewWorkerPool(totalWorker)
 	wp.Run()
 
@@ -48,7 +79,9 @@ func RunCommands() {
 	for i, d := range records {
 		d := d
 		i := i
+
 		wp.AddTask(
+
 			func() {
 
 				insName := d[0]
@@ -59,7 +92,9 @@ func RunCommands() {
 
 				if i > 0 {
 					if env == "production" || env == "integration" {
-						msg := ExecuteCommand(insName, env)
+						args := GetDescribeInstanceCommand(insName, env)
+						msg := ExecuteCommand(args)
+
 						resultC <- EvaluateOutput(msg, insName, env, team)
 					} else {
 						resultC <- Instances{
@@ -85,15 +120,71 @@ func RunCommands() {
 		instances = append(instances, res)
 	}
 
-	CreateCSV(instances)
-
-	end := time.Now()
-
-	fmt.Printf("----- Execution -----\nstart on: %v\nend on: %v\nTask: %d\nWorker : %d\nduration: %v\n------------------------\n", start, end, totalTask, totalWorker, time.Since(start))
+	CreateCSV(instances, filename, DescribeInstanceCommand)
 
 }
 
-func ExecuteCommand(instanceName, environment string) string {
+func RunDeleteVMCommand(filename string, records [][]string, totalWorker int) {
+
+	// Start Worker Pool.
+	wp := workerpool.NewWorkerPool(totalWorker)
+	wp.Run()
+
+	var deleteVM []DeleteVM
+
+	totalTask := len(records)
+	resultC := make(chan DeleteVM, totalTask)
+
+	for i, d := range records {
+		d := d
+		i := i
+
+		wp.AddTask(
+
+			func() {
+
+				insName := d[0]
+				env := d[1]
+				team := d[2]
+
+				fmt.Printf("---- Processing Task : %d--- %s -> %s ----- \n", i, insName, env)
+
+				if i > 0 {
+					if env == "production" || env == "integration" {
+						args := GetDeleteVMCommand(insName, env)
+						msg := ExecuteCommand(args)
+
+						resultC <- EvaluateDeleteVMOutput(msg, insName, env, team)
+					} else {
+						resultC <- DeleteVM{
+							ServiceName: insName,
+							Environment: env,
+							Team:        team,
+							Notes:       "No Action",
+						}
+					}
+				} else {
+					resultC <- DeleteVM{}
+				}
+
+			},
+		)
+
+	}
+
+	for i := 0; i < totalTask; i++ {
+		res := <-resultC
+		if i == 0 {
+			continue
+		}
+		deleteVM = append(deleteVM, res)
+	}
+
+	CreateCSV(deleteVM, filename, DeleteVMCommand)
+
+}
+
+func GetDescribeInstanceCommand(instanceName, environment string) []string {
 	args := []string{
 		"execute",
 		"describe-instance",
@@ -101,12 +192,73 @@ func ExecuteCommand(instanceName, environment string) string {
 		fmt.Sprintf("ENVIRONMENT=%s", environment),
 	}
 
+	return args
+
+}
+
+func GetDeleteVMCommand(vmName, environment string) []string {
+
+	/*
+		proctor execute delete-vm
+		VM_NAME=g-fraud-device-tigergraph-db-c-02
+		PROJECT_NAME=rabbit-hole-integration-007 PURGE=true DELETE_DISKS=all
+
+	*/
+
+	projectName := "rabbit-hole-integration-007"
+	if environment == "production" {
+		projectName = "infrastructure-904"
+	}
+
+	args := []string{
+		"execute",
+		"delete-vm",
+		fmt.Sprintf("VM_NAME=%s", vmName),
+		fmt.Sprintf("PROJECT_NAME=%s", projectName),
+		fmt.Sprintf("PURGE=%v", true),
+		fmt.Sprintf("DELETE_DISK=%s", "all"),
+	}
+
+	return args
+
+}
+
+func ExecuteCommand(args []string) string {
+
 	msg, err := exec.Command("proctor", args...).Output()
 	if err != nil {
 		log.Println(err)
 	}
 
 	return string(msg)
+}
+
+func EvaluateDeleteVMOutput(msg, insName, environment, team string) DeleteVM {
+
+	notes := "No Action"
+
+	m := strings.ToLower(msg)
+	resps := strings.Split(m, "\n")
+
+	for _, d := range resps {
+		if d == "" {
+			continue
+		}
+
+		deleted := strings.Contains(d, "deleted")
+		if deleted {
+			notes = d
+		}
+
+	}
+
+	return DeleteVM{
+		ServiceName: insName,
+		Environment: environment,
+		Team:        team,
+		Notes:       notes,
+	}
+
 }
 
 func EvaluateOutput(msg, insName, environment, team string) Instances {
@@ -162,7 +314,7 @@ func EvaluateOutput(msg, insName, environment, team string) Instances {
 
 }
 
-func CreateCSV(ins []Instances) {
+func CreateCSV(data interface{}, filename, command string) {
 
 	var rows [][]string
 
@@ -172,31 +324,61 @@ func CreateCSV(ins []Instances) {
 	}
 	defer file.Close()
 
-	rows = append(rows, []string{
-		"ServiceName",
-		"IP",
-		"Environment",
-		"MachineType",
-		"DiskName1",
-		"DiskSize1 GB",
-		"DiskName2",
-		"DiskSize2 GB",
-		"Team",
-	})
+	switch command {
+	case DescribeInstanceCommand:
+		rows = append(rows, []string{
+			"ServiceName",
+			"IP",
+			"Environment",
+			"MachineType",
+			"DiskName1",
+			"DiskSize1 GB",
+			"DiskName2",
+			"DiskSize2 GB",
+			"Team",
+		})
 
-	for _, record := range ins {
-		row := []string{
-			record.ServiceName,
-			record.IP,
-			record.Environment,
-			record.MachineType,
-			record.DiskName1,
-			record.Disk1Size1,
-			record.DiskName2,
-			record.Disk1Size2,
-			record.Team,
+		ins := data.([]Instances)
+
+		for _, record := range ins {
+			row := []string{
+				record.ServiceName,
+				record.IP,
+				record.Environment,
+				record.MachineType,
+				record.DiskName1,
+				record.Disk1Size1,
+				record.DiskName2,
+				record.Disk1Size2,
+				record.Team,
+			}
+			rows = append(rows, row)
 		}
-		rows = append(rows, row)
+	case DeleteVMCommand:
+		rows = append(rows, []string{
+			"ServiceName",
+			"Environment",
+			"Team",
+			"Notes",
+		})
+
+		ins := data.([]DeleteVM)
+
+		for _, record := range ins {
+			row := []string{
+				record.ServiceName,
+				record.Environment,
+				record.Team,
+				record.Notes,
+			}
+			rows = append(rows, row)
+		}
+	default:
+		return
+	}
+
+	if len(rows) < 1 {
+		return
 	}
 
 	writer := csv.NewWriter(file)
